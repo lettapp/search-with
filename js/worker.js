@@ -46,7 +46,7 @@ function assign()
 
 function clone(x)
 {
-	return is.array(x) ? [...x] : assign({}, x);
+	return is.array(x) ? [...x] : {...x}
 }
 
 function on(s)
@@ -225,20 +225,16 @@ class contextMenu
 		][1];
 	}
 
-	static removeAll()
+	static removeAll(fn)
 	{
-		return chrome.contextMenus.removeAll();
+		chrome.contextMenus.removeAll(fn);
 	}
 }
 
 class ext
 {
-	static async onInstalled({previousVersion})
+	static async onInstalled()
 	{
-		if (previousVersion < 3.12) {
-			await storage.clear();
-		};
-
 		this.getOptionsViewList().then(
 			list => this.setItems(list || this.default)
 		);
@@ -248,7 +244,7 @@ class ext
 	{
 		const contextMenuList = structuredClone(optionsViewList);
 
-		contextMenu.removeAll().then(
+		contextMenu.removeAll(
 			_ => storage.set({contextMenuList:this.createContextMenu(contextMenuList)})
 		);
 
@@ -300,12 +296,18 @@ class ext
 			const parentId = contextMenu.addSeparatedItem({title:'Incognito'});
 
 			for (const item of incg) {
-				item.id = contextMenu.addItem({parentId, title:item.name});
+				item.id = contextMenu.addItem({title:item.name, parentId});
 			}
 		}
 
-		contextMenu.addSeparator();
-		contextMenu.addItem({id:Extension.EDITOR, title:'Add new...'});
+		if (list.length > 3) {
+			contextMenu.addSeparator();
+		}
+
+		contextMenu.addItem({
+			id:Extension.EDITOR,
+			title:'Add new...',
+		});
 
 		return [...nrml, ...incg];
 	}
@@ -323,48 +325,6 @@ class ext
 		link:'https://twitter.com/search?q=',
 		mode:Mode.NRML,
 	}]
-}
-
-class Notifier
-{
-	constructor()
-	{
-		this.channels = {};
-	}
-
-	addListener(target, ids)
-	{
-		ids = string.split(ids);
-
-		for (const id of ids) {
-			this.getChannel(id).add(target);
-		}
-	}
-
-	removeListener(target, ids)
-	{
-		ids = string.split(ids);
-
-		if (!ids.length) {
-			ids = keys(this.channels);
-		}
-
-		for (const id of ids) {
-			this.getChannel(id).delete(target);
-		}
-	}
-
-	send(id, data)
-	{
-		for (const target of this.getChannel(id)) {
-			target[on(id)](data);
-		}
-	}
-
-	getChannel(id)
-	{
-		return this.channels[id] ||= new Set;
-	}
 }
 
 class App
@@ -387,7 +347,7 @@ class App
 	onMenuItemClicked({menuItemId, selectionText}, sender)
 	{
 		if (menuItemId == Extension.EDITOR) {
-			return this.openEditor();
+			return this.openEditor(sender);
 		}
 
 		ext.getContextMenuItem(menuItemId).then(
@@ -395,9 +355,9 @@ class App
 		);
 	}
 
-	onClicked()
+	onClicked(sender)
 	{
-		this.openEditor();
+		this.openEditor(sender);
 	}
 
 	onInstalled(details)
@@ -405,23 +365,22 @@ class App
 		ext.onInstalled(details);
 	}
 
-	openEditor()
+	openEditor(sender)
 	{
-		this.tryFocusEditorWindow().then(
-			didFocus => !didFocus && this.openNewEditorWindow()
+		this.tryFocusExistingEditor().then(
+			didFocus => !didFocus && this.openNewEditorWindow(sender)
 		);
 	}
 
-	tryFocusEditorWindow()
+	tryFocusExistingEditor()
 	{
 		return storage.get('lastEditorWindowId').then(
 			id => chrome.windows.update(id ?? 0, {focused:true}).catch(none)
 		);
 	}
 
-	async openNewEditorWindow()
+	async openNewEditorWindow(tab)
 	{
-		const screen = await chrome.system.display.getInfo().then(arr => arr[0].bounds);
 		const arrLen = await ext.getItemsCount();
 
 		const params = {
@@ -429,7 +388,7 @@ class App
 			type:'popup',
 			top:0,
 			width:340,
-			left:Math.floor((screen.width - 340) / 2),
+			left:Math.floor((tab.width - 340) / 2),
 			height:Math.max(460, arrLen * 52 + 220),
 		};
 

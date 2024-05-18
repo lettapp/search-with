@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
-    "minimum_chrome_version": "95",
-    "version": "3.12",
+    "minimum_chrome_version": "100",
+    "version": "24.05.18",
     "name": "Lett Search With",
     "description": "Search for selected text with any engine.",
     "icons": {
@@ -10,8 +10,7 @@
     },
     "permissions": [
         "storage",
-        "contextMenus",
-        "system.display"
+        "contextMenus"
     ],
     "background": {
         "service_worker": "/js/worker.js"

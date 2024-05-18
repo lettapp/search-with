@@ -46,7 +46,7 @@ function assign()
 
 function clone(x)
 {
-	return is.array(x) ? [...x] : assign({}, x);
+	return is.array(x) ? [...x] : {...x}
 }
 
 function on(s)
@@ -250,20 +250,16 @@ class contextMenu
 		][1];
 	}
 
-	static removeAll()
+	static removeAll(fn)
 	{
-		return chrome.contextMenus.removeAll();
+		chrome.contextMenus.removeAll(fn);
 	}
 }
 
 class ext
 {
-	static async onInstalled({previousVersion})
+	static async onInstalled()
 	{
-		if (previousVersion < 3.12) {
-			await storage.clear();
-		};
-
 		this.getOptionsViewList().then(
 			list => this.setItems(list || this.default)
 		);
@@ -273,7 +269,7 @@ class ext
 	{
 		const contextMenuList = structuredClone(optionsViewList);
 
-		contextMenu.removeAll().then(
+		contextMenu.removeAll(
 			_ => storage.set({contextMenuList:this.createContextMenu(contextMenuList)})
 		);
 
@@ -325,12 +321,18 @@ class ext
 			const parentId = contextMenu.addSeparatedItem({title:'Incognito'});
 
 			for (const item of incg) {
-				item.id = contextMenu.addItem({parentId, title:item.name});
+				item.id = contextMenu.addItem({title:item.name, parentId});
 			}
 		}
 
-		contextMenu.addSeparator();
-		contextMenu.addItem({id:Extension.EDITOR, title:'Add new...'});
+		if (list.length > 3) {
+			contextMenu.addSeparator();
+		}
+
+		contextMenu.addItem({
+			id:Extension.EDITOR,
+			title:'Add new...',
+		});
 
 		return [...nrml, ...incg];
 	}
