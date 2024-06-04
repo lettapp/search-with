@@ -1,11 +1,13 @@
 /*
  * This code is part of Lett Search With chrome extension
- * 
+ *
+ * LettApp lett.app/search-with
+ * GitHub  @lettapp
  */
 'use strict';
 
 const Extension = {
-	EDITOR:'EDITOR'
+	Editor:'Editor'
 }
 
 const Mode = {
@@ -129,6 +131,21 @@ class string
 
 		return str.replace(/%s/g, _ => args.shift());
 	}
+
+	static grep(ptrn, str)
+	{
+		const m = this.match(ptrn, str);
+
+		switch (m.length)
+		{
+			case 0: return '';
+			case 1: return m[0];
+			case 2: return m[1];
+
+			default:
+				return m.slice(1);
+		}
+	}
 }
 
 class array
@@ -152,6 +169,26 @@ class array
 		if (i >= 0) {
 			return arr.splice(i, 1).pop();
 		}
+	}
+}
+
+class regex
+{
+	static create(pattern, args)
+	{
+		let ptrn = string.grep(/.(.+)\//, pattern),
+			mods = string.grep(/[a-z]+$/, pattern);
+
+		ptrn = string.format(ptrn,
+			array.cast(args).map(this.escape)
+		);
+
+		return new RegExp(ptrn, mods);
+	}
+
+	static escape(s)
+	{
+		return String(s).replace(/[-()\[\]{}+?*.$^|,:#<!\\]/g, '\\$&');
 	}
 }
 
@@ -233,22 +270,22 @@ class contextMenu
 
 class ext
 {
-	static async onInstalled()
+	static onInstalled()
 	{
-		this.getOptionsViewList().then(
+		this.getEditorViewList().then(
 			list => this.setItems(list || this.default)
 		);
 	}
 
-	static setItems(optionsViewList)
+	static setItems(editorViewList)
 	{
-		const contextMenuList = structuredClone(optionsViewList);
+		const contextMenuList = structuredClone(editorViewList);
 
 		contextMenu.removeAll(
 			_ => storage.set({contextMenuList:this.createContextMenu(contextMenuList)})
 		);
 
-		storage.set({optionsViewList});
+		storage.set({editorViewList});
 	}
 
 	static getContextMenuItem(id)
@@ -258,14 +295,14 @@ class ext
 		);
 	}
 
-	static getOptionsViewList()
-	{
-		return storage.get('optionsViewList');
-	}
-
 	static getItemsCount()
 	{
-		return this.getOptionsViewList().then(list => list.length);
+		return this.getEditorViewList().then(list => list.length);
+	}
+
+	static getEditorViewList()
+	{
+		return storage.get('editorViewList');
 	}
 
 	static createContextMenu(list)
@@ -305,7 +342,7 @@ class ext
 		}
 
 		contextMenu.addItem({
-			id:Extension.EDITOR,
+			id:Extension.Editor,
 			title:'Add new...',
 		});
 
@@ -317,12 +354,12 @@ class ext
 		link:'https://www.google.com/search?q=',
 		mode:Mode.NRML,
 	},{
-		name:'Youtube',
+		name:'YouTube',
 		link:'https://www.youtube.com/results?search_query=',
 		mode:Mode.NRML,
 	},{
-		name:'Twitter',
-		link:'https://twitter.com/search?q=',
+		name:'X',
+		link:'https://x.com/search?q=',
 		mode:Mode.NRML,
 	}]
 }
@@ -342,17 +379,50 @@ class App
 		chrome.action.onClicked.addListener(
 			this.onClicked.bind(this)
 		);
+
+		chrome.omnibox.onInputEntered.addListener(
+			this.onOmniEnter.bind(this)
+		);
 	}
 
 	onMenuItemClicked({menuItemId, selectionText}, sender)
 	{
-		if (menuItemId == Extension.EDITOR) {
+		if (menuItemId == Extension.Editor) {
 			return this.openEditor(sender);
 		}
 
 		ext.getContextMenuItem(menuItemId).then(
-			({link, incognito}) => this.openSearchTab(link, incognito, selectionText, sender)
+			({link, incognito}) => this.execRequest(link, incognito, selectionText, sender)
 		);
+	}
+
+	async onOmniEnter(text)
+	{
+		let itemsList = await ext.getEditorViewList(),
+			itemMatch = itemsList[0],
+			userInput = text;
+
+		for (const item of itemsList)
+		{
+			text = text.replace(
+				regex.create('/^%s/i', item.name), ''
+			);
+
+			if (text != userInput) {
+				itemMatch = item; break;
+			}
+		}
+
+		if (itemMatch)
+		{
+			const [link, incognito] = [
+				itemMatch.link, [Mode.INCG, Mode.BOTH].includes(itemMatch.mode)
+			];
+
+			this.getActiveTab().then(
+				tab => this.execRequest(link, incognito, text, tab, true)
+			);
+		}
 	}
 
 	onClicked(sender)
@@ -360,9 +430,9 @@ class App
 		this.openEditor(sender);
 	}
 
-	onInstalled(details)
+	onInstalled()
 	{
-		ext.onInstalled(details);
+		ext.onInstalled();
 	}
 
 	openEditor(sender)
@@ -384,7 +454,7 @@ class App
 		const arrLen = await ext.getItemsCount();
 
 		const params = {
-			url:'html/options.html',
+			url:'html/editor.html',
 			type:'popup',
 			top:0,
 			width:340,
@@ -397,7 +467,7 @@ class App
 		);
 	}
 
-	openSearchTab(url, incognito, text, sender)
+	execRequest(url, incognito, text, sender, isOmni)
 	{
 		text = text.trim();
 		text = encodeURIComponent(text).replace(/%20/g, '+');
@@ -409,12 +479,21 @@ class App
 			return;
 		}
 
-		if (incognito > sender.incognito) {
+		if (incognito && !sender.incognito) {
 			chrome.windows.create({url, incognito});
 		}
 		else {
+			if (isOmni) {
+				return chrome.tabs.update({url});
+			}
+
 			chrome.tabs.create({url});
 		}
+	}
+
+	getActiveTab()
+	{
+		return chrome.tabs.query({active:true, currentWindow:true}).then(tabs => tabs[0]);
 	}
 }
 

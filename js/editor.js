@@ -1,11 +1,13 @@
 /*
  * This code is part of Lett Search With chrome extension
- * 
+ *
+ * LettApp lett.app/search-with
+ * GitHub  @lettapp
  */
 'use strict';
 
 const Extension = {
-	EDITOR:'EDITOR'
+	Editor:'Editor'
 }
 
 const Mode = {
@@ -129,6 +131,21 @@ class string
 
 		return str.replace(/%s/g, _ => args.shift());
 	}
+
+	static grep(ptrn, str)
+	{
+		const m = this.match(ptrn, str);
+
+		switch (m.length)
+		{
+			case 0: return '';
+			case 1: return m[0];
+			case 2: return m[1];
+
+			default:
+				return m.slice(1);
+		}
+	}
 }
 
 class array
@@ -152,6 +169,26 @@ class array
 		if (i >= 0) {
 			return arr.splice(i, 1).pop();
 		}
+	}
+}
+
+class regex
+{
+	static create(pattern, args)
+	{
+		let ptrn = string.grep(/.(.+)\//, pattern),
+			mods = string.grep(/[a-z]+$/, pattern);
+
+		ptrn = string.format(ptrn,
+			array.cast(args).map(this.escape)
+		);
+
+		return new RegExp(ptrn, mods);
+	}
+
+	static escape(s)
+	{
+		return String(s).replace(/[-()\[\]{}+?*.$^|,:#<!\\]/g, '\\$&');
 	}
 }
 
@@ -258,22 +295,22 @@ class contextMenu
 
 class ext
 {
-	static async onInstalled()
+	static onInstalled()
 	{
-		this.getOptionsViewList().then(
+		this.getEditorViewList().then(
 			list => this.setItems(list || this.default)
 		);
 	}
 
-	static setItems(optionsViewList)
+	static setItems(editorViewList)
 	{
-		const contextMenuList = structuredClone(optionsViewList);
+		const contextMenuList = structuredClone(editorViewList);
 
 		contextMenu.removeAll(
 			_ => storage.set({contextMenuList:this.createContextMenu(contextMenuList)})
 		);
 
-		storage.set({optionsViewList});
+		storage.set({editorViewList});
 	}
 
 	static getContextMenuItem(id)
@@ -283,14 +320,14 @@ class ext
 		);
 	}
 
-	static getOptionsViewList()
-	{
-		return storage.get('optionsViewList');
-	}
-
 	static getItemsCount()
 	{
-		return this.getOptionsViewList().then(list => list.length);
+		return this.getEditorViewList().then(list => list.length);
+	}
+
+	static getEditorViewList()
+	{
+		return storage.get('editorViewList');
 	}
 
 	static createContextMenu(list)
@@ -330,7 +367,7 @@ class ext
 		}
 
 		contextMenu.addItem({
-			id:Extension.EDITOR,
+			id:Extension.Editor,
 			title:'Add new...',
 		});
 
@@ -342,12 +379,12 @@ class ext
 		link:'https://www.google.com/search?q=',
 		mode:Mode.NRML,
 	},{
-		name:'Youtube',
+		name:'YouTube',
 		link:'https://www.youtube.com/results?search_query=',
 		mode:Mode.NRML,
 	},{
-		name:'Twitter',
-		link:'https://twitter.com/search?q=',
+		name:'X',
+		link:'https://x.com/search?q=',
 		mode:Mode.NRML,
 	}]
 }
@@ -1131,6 +1168,16 @@ class UIEnumButton extends UIButton
 
 customElements.define('ui-enum-button', UIEnumButton);
 
+class UINameInput extends UITextInput
+{
+	onEnter()
+	{
+		this.blur();
+	}
+}
+
+customElements.define('ui-name-input', UINameInput, {extends:'input'});
+
 class UILinkInput extends UITextInput
 {
 	get value()
@@ -1212,7 +1259,7 @@ class EditView extends ViewController
 			new UIView({source:'UIEditView'})
 		);
 
-		ext.getOptionsViewList().then(
+		ext.getEditorViewList().then(
 			this.init.bind(this)
 		);
 	}
@@ -1645,7 +1692,7 @@ class UIItemView extends UIView
 
 	didInit({item})
 	{
-		new UITextInput({
+		new UINameInput({
 			styles:'CSItemInput',
 			placeholder:'Name',
 			name:'name',
@@ -1706,7 +1753,7 @@ class App extends ViewController
 		self.notifications = new Notifier;
 
 		super(
-			new UIView({styles:'CSView CSAppView'})
+			new UIView({styles:'CSAppView'})
 		);
 
 		this.spaceQueue = [];
@@ -1772,7 +1819,7 @@ class App extends ViewController
 		}
 
 		this.view.addSubview(view, {
-			styles:'CSAppViewBottom CSInvisible'
+			styles:'CSAppViewBottom'
 		});
 
 		this.spaceQueueNext();
@@ -1798,8 +1845,6 @@ class App extends ViewController
 	grantSpace(c)
 	{
 		const {view, anim, time} = c;
-
-		view.delClass('CSInvisible');
 
 		UX[anim](view, time);
 
