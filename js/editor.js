@@ -6,8 +6,10 @@
  */
 'use strict';
 
-const Extension = {
-	Editor:'Editor'
+const Ext = {
+	Editor:'Editor',
+	NewTab:'newForegroundTab',
+	CurrentTab:'currentTab',
 }
 
 const Mode = {
@@ -295,13 +297,6 @@ class contextMenu
 
 class ext
 {
-	static onInstalled()
-	{
-		this.getEditorViewList().then(
-			list => this.setItems(list || this.default)
-		);
-	}
-
 	static setItems(editorViewList)
 	{
 		const contextMenuList = structuredClone(editorViewList);
@@ -367,7 +362,7 @@ class ext
 		}
 
 		contextMenu.addItem({
-			id:Extension.Editor,
+			id:Ext.Editor,
 			title:'Add new...',
 		});
 
@@ -376,15 +371,15 @@ class ext
 
 	static default = [{
 		name:'Google',
-		link:'https://www.google.com/search?q=',
+		link:'https://www.google.com/search?q=%s',
 		mode:Mode.NRML,
 	},{
 		name:'YouTube',
-		link:'https://www.youtube.com/results?search_query=',
+		link:'https://www.youtube.com/results?search_query=%s',
 		mode:Mode.NRML,
 	},{
 		name:'X',
-		link:'https://x.com/search?q=',
+		link:'https://x.com/search?q=%s',
 		mode:Mode.NRML,
 	}]
 }

@@ -6,8 +6,10 @@
  */
 'use strict';
 
-const Extension = {
-	Editor:'Editor'
+const Ext = {
+	Editor:'Editor',
+	NewTab:'newForegroundTab',
+	CurrentTab:'currentTab',
 }
 
 const Mode = {
@@ -270,13 +272,6 @@ class contextMenu
 
 class ext
 {
-	static onInstalled()
-	{
-		this.getEditorViewList().then(
-			list => this.setItems(list || this.default)
-		);
-	}
-
 	static setItems(editorViewList)
 	{
 		const contextMenuList = structuredClone(editorViewList);
@@ -342,7 +337,7 @@ class ext
 		}
 
 		contextMenu.addItem({
-			id:Extension.Editor,
+			id:Ext.Editor,
 			title:'Add new...',
 		});
 
@@ -351,78 +346,89 @@ class ext
 
 	static default = [{
 		name:'Google',
-		link:'https://www.google.com/search?q=',
+		link:'https://www.google.com/search?q=%s',
 		mode:Mode.NRML,
 	},{
 		name:'YouTube',
-		link:'https://www.youtube.com/results?search_query=',
+		link:'https://www.youtube.com/results?search_query=%s',
 		mode:Mode.NRML,
 	},{
 		name:'X',
-		link:'https://x.com/search?q=',
+		link:'https://x.com/search?q=%s',
 		mode:Mode.NRML,
 	}]
+}
+
+class tabs
+{
+	static async prompt(tab, prompt)
+	{
+		const alive = await this.sendMessage(tab.id, {ping:null}).catch(none);
+
+		if (!alive)
+		{
+			const scriptable = await chrome.scripting.executeScript({
+				target: {
+					tabId: tab.id
+				},
+				files: ['/js/content/runtime.js']
+			})
+			.catch(none);
+
+			if (!scriptable) {
+				return;
+			}
+		}
+
+		return this.sendMessage(tab.id, {prompt});
+	}
+
+	static getActive()
+	{
+		return this.query({active:true, currentWindow:true}).then(tabs => tabs[0]);
+	}
+
+	static sendMessage(tabId, message)
+	{
+		return chrome.tabs.sendMessage(tabId, message);
+	}
+
+	static query(p)
+	{
+		return chrome.tabs.query(p);
+	}
 }
 
 class App
 {
 	constructor()
 	{
-		chrome.runtime.onInstalled.addListener(
-			this.onInstalled.bind(this)
+		chrome.action.onClicked.addListener(
+			this.onClicked.bind(this)
 		);
 
 		chrome.contextMenus.onClicked.addListener(
 			this.onMenuItemClicked.bind(this)
 		);
 
-		chrome.action.onClicked.addListener(
-			this.onClicked.bind(this)
-		);
-
 		chrome.omnibox.onInputEntered.addListener(
 			this.onOmniEnter.bind(this)
 		);
-	}
 
-	onMenuItemClicked({menuItemId, selectionText}, sender)
-	{
-		if (menuItemId == Extension.Editor) {
-			return this.openEditor(sender);
-		}
+		chrome.commands.onCommand.addListener(
+			this.onCommand.bind(this)
+		);
 
-		ext.getContextMenuItem(menuItemId).then(
-			({link, incognito}) => this.execRequest(link, incognito, selectionText, sender)
+		chrome.runtime.onInstalled.addListener(
+			this.onInstalled.bind(this)
 		);
 	}
 
-	async onOmniEnter(text)
+	onInstalled()
 	{
-		let itemsList = await ext.getEditorViewList(),
-			itemMatch = itemsList[0],
-			userInput = text;
-
-		for (const item of itemsList)
-		{
-			text = text.replace(
-				regex.create('/^%s/i', item.name), ''
-			);
-
-			if (text != userInput) {
-				itemMatch = item; break;
-			}
-		}
-
-		if (itemMatch)
-		{
-			const [link, incognito] = [
-				itemMatch.link, [Mode.INCG, Mode.BOTH].includes(itemMatch.mode)
-			];
-
-			this.getActiveTab().then(
-				tab => this.execRequest(link, incognito, text, tab, true)
-			);
-		}
+		ext.getEditorViewList().then(
+			list => ext.setItems(list || ext.default)
+		);
 	}
 
 	onClicked(sender)
@@ -430,9 +436,54 @@ class App
 		this.openEditor(sender);
 	}
 
-	onInstalled()
+	onCommand(command, sender)
 	{
-		ext.onInstalled();
+		tabs.prompt(sender, {message:'Lett Search With:', value:''}).then(
+			userInput => this.onPromptEnter(userInput, sender)
+		);
+	}
+
+	onMenuItemClicked({menuItemId, selectionText}, sender)
+	{
+		if (menuItemId == Ext.Editor) {
+			return this.openEditor(sender);
+		}
+
+		if (!selectionText) {
+			return;
+		}
+
+		ext.getContextMenuItem(menuItemId).then(
+			item => this.execRequest(item.link, item.incognito, selectionText, sender, Ext.NewTab)
+		);
+	}
+
+	async onOmniEnter(userInput, disposition)
+	{
+		const {searchUrl, incognito, userQuery} = await this.parse(userInput);
+
+		if (searchUrl) {
+			tabs.getActive().then(
+				tab => this.execRequest(searchUrl, incognito, userQuery, tab, disposition)
+			);
+		}
+	}
+
+	async onPromptEnter(userInput, sender)
+	{
+		if (!userInput) {
+			return;
+		}
+
+		const {searchUrl, incognito, userQuery} = await this.parse(userInput);
+
+		if (searchUrl) {
+			return this.execRequest(searchUrl, incognito, userQuery, sender, Ext.NewTab);
+		}
+
+		tabs.prompt(sender, {message:'Could not find engine', value:userInput}).then(
+			userInput => this.onPromptEnter(userInput, sender)
+		);
 	}
 
 	openEditor(sender)
@@ -467,7 +518,27 @@ class App
 		);
 	}
 
-	execRequest(url, incognito, text, sender, isOmni)
+	async parse(userInput)
+	{
+		const itemArray = await ext.getEditorViewList();
+
+		for (const item of itemArray)
+		{
+			const matched = string.grep(
+				regex.create('/^%sx?/i', item.name), userInput
+			);
+
+			if (matched) return {
+				searchUrl:item.link,
+				incognito:item.mode == Mode.INCG || /.x$/.test(matched),
+				userQuery:userInput.substring(matched.length)
+			};
+		}
+
+		return {};
+	}
+
+	execRequest(url, incognito, text, sender, disposition)
 	{
 		text = text.trim();
 		text = encodeURIComponent(text).replace(/%20/g, '+');
@@ -480,20 +551,16 @@ class App
 		}
 
 		if (incognito && !sender.incognito) {
-			chrome.windows.create({url, incognito});
+			return chrome.windows.create({url, incognito});
 		}
-		else {
-			if (isOmni) {
-				return chrome.tabs.update({url});
-			}
 
-			chrome.tabs.create({url});
+		if (disposition == Ext.CurrentTab) {
+			return chrome.tabs.update({url});
 		}
-	}
 
-	getActiveTab()
-	{
-		return chrome.tabs.query({active:true, currentWindow:true}).then(tabs => tabs[0]);
+		chrome.tabs.create({url,
+			active: disposition == Ext.NewTab
+		});
 	}
 }
 
