@@ -424,8 +424,12 @@ class App
 		);
 	}
 
-	onInstalled()
+	onInstalled({reason})
 	{
+		if (!['install', 'update'].includes(reason)) {
+			return;
+		}
+
 		ext.getEditorViewList().then(
 			list => ext.setItems(list || ext.default)
 		);

@@ -21,5 +21,6 @@ You can install it directly from the [Chrome Web Store][cws] or manually using t
 All extension permissions can be found in [/manifest.json][manifest]
 
 [cws]: https://chromewebstore.google.com/detail/lett-search-with/nhabafbneoijfmkmbhmclhghainbgobc "Lett Search With on Chrome Web Store"
+[ews]: https://microsoftedge.microsoft.com/addons/detail/lett-search-with/omlgplpkgdfpngijacmgnigbggckaglk "Lett Search With on Microsoft Edge Store"
 [screenshot]: /assets/screenshot.webp "Extension Screenshot"
 [manifest]: /manifest.json
